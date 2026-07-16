@@ -58,3 +58,10 @@ export function formatShortDate(value?: string) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${month}-${day}`;
 }
+
+export function formatFullDate(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toISOString().slice(0, 10);
+}

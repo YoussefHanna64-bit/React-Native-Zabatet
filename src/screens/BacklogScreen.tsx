@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Menu, Text, TextInput } from "react-native-paper";
 import { useWorkspace } from "../context/WorkspaceContext";
-import type { TaskStatus } from "../features/backlog/types/backlog.types";
+import type {
+  TaskDoc,
+  TaskStatus,
+} from "../features/backlog/types/backlog.types";
 import {
   line,
   muted,
@@ -10,10 +13,10 @@ import {
   text as textColor,
 } from "../features/backlog/constants/backlog.constants";
 import SprintSection from "../features/backlog/components/SprintSection";
+import CreateIssueDialog from "../features/backlog/components/CreateIssueDialog";
 import BoardSelector from "../features/boards/components/BoardSelector";
-
+import { uniqueById } from "../features/backlog/utils/backlog.utils";
 import { getTaskComments } from "../features/backlog/api/backlog.api";
-
 import { useBacklogFilters } from "../features/backlog/hooks/useBacklogFilters";
 import { useBacklogData } from "../features/backlog/hooks/useBacklogData";
 
@@ -35,6 +38,8 @@ export default function BacklogScreen() {
     selectedBoardId,
     sprints,
     tasks,
+    setTasks,
+    teamMembers,
     loading,
     loadingBoard,
     error,
@@ -46,6 +51,7 @@ export default function BacklogScreen() {
   const [statusFilter, setStatusFilter] = useState<"All" | TaskStatus>("All");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>(
     {},
   );
@@ -79,6 +85,12 @@ export default function BacklogScreen() {
       cancelled = true;
     };
   }, [tasks]);
+
+  const selectedBoard = boards.find((b) => b._id === selectedBoardId) ?? null;
+
+  const handleCreatedIssue = (task: TaskDoc) => {
+    setTasks((current) => uniqueById([task, ...current]));
+  };
 
   if (loading) {
     return (
@@ -140,7 +152,7 @@ export default function BacklogScreen() {
           <Button
             mode="contained"
             icon="plus"
-            onPress={() => {}}
+            onPress={() => setCreateOpen(true)}
             disabled={!selectedBoardId}
             compact
             style={{ marginLeft: "auto" }}
@@ -172,7 +184,7 @@ export default function BacklogScreen() {
               <Button
                 mode="contained"
                 icon="plus"
-                onPress={() => {}}
+                onPress={() => setCreateOpen(true)}
                 style={{ marginTop: 12 }}
               >
                 Create Issue
@@ -198,6 +210,15 @@ export default function BacklogScreen() {
           )}
         </ScrollView>
       </View>
+
+      <CreateIssueDialog
+        visible={createOpen}
+        board={selectedBoard}
+        sprints={sprints}
+        teamMembers={teamMembers}
+        onDismiss={() => setCreateOpen(false)}
+        onCreated={handleCreatedIssue}
+      />
     </View>
   );
 }

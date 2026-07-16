@@ -1,4 +1,4 @@
-import { TaskStatus } from "../types/backlog.types";
+import { Priority, TaskStatus } from "../types/backlog.types";
 
 export const purple = "#5B3FF3";
 export const text = "#1F2937";
@@ -30,3 +30,13 @@ export const labelStyles: Record<string, { color: string; bg: string }> = {
   performance: { color: "#EA580C", bg: "#FFEDD5" },
   api: { color: "#059669", bg: "#D1FAE5" },
 };
+
+export const STATUS_OPTIONS: TaskStatus[] = [
+  "Backlog",
+  "To Do",
+  "In Progress",
+  "Review",
+  "Done",
+];
+
+export const PRIORITY_OPTIONS: Priority[] = ["Low", "Medium", "High"];
