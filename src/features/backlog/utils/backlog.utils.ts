@@ -65,3 +65,15 @@ export function formatFullDate(value?: string) {
   if (Number.isNaN(date.getTime())) return "—";
   return date.toISOString().slice(0, 10);
 }
+
+export function timeAgo(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.max(1, Math.floor(diff / 60000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}

@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Menu, Text, TextInput } from "react-native-paper";
+import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 import type {
+  CommentDoc,
   TaskDoc,
   TaskStatus,
 } from "../features/backlog/types/backlog.types";
@@ -14,9 +16,17 @@ import {
 } from "../features/backlog/constants/backlog.constants";
 import SprintSection from "../features/backlog/components/SprintSection";
 import CreateIssueDialog from "../features/backlog/components/CreateIssueDialog";
+import TaskDetailsDialog from "../features/backlog/components/TaskDetailsDialog";
 import BoardSelector from "../features/boards/components/BoardSelector";
-import { uniqueById } from "../features/backlog/utils/backlog.utils";
-import { getTaskComments } from "../features/backlog/api/backlog.api";
+import {
+  getApiError,
+  uniqueById,
+} from "../features/backlog/utils/backlog.utils";
+import {
+  getTaskComments,
+  createTaskComment,
+  updateTask,
+} from "../features/backlog/api/backlog.api";
 import { useBacklogFilters } from "../features/backlog/hooks/useBacklogFilters";
 import { useBacklogData } from "../features/backlog/hooks/useBacklogData";
 
@@ -30,6 +40,7 @@ const STATUS_FILTERS: Array<"All" | TaskStatus> = [
 ];
 
 export default function BacklogScreen() {
+  const { user } = useAuth();
   const { currentWorkspace } = useWorkspace();
 
   const {
@@ -43,6 +54,7 @@ export default function BacklogScreen() {
     loading,
     loadingBoard,
     error,
+    setError,
     selectBoard,
     handleBoardCreated,
   } = useBacklogData(currentWorkspace?.name);
@@ -52,8 +64,18 @@ export default function BacklogScreen() {
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [comments, setComments] = useState<CommentDoc[]>([]);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>(
     {},
+  );
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [savingTask, setSavingTask] = useState(false);
+
+  const selectedBoard = boards.find((b) => b._id === selectedBoardId) ?? null;
+
+  const selectedTask = useMemo(
+    () => tasks.find((task) => task._id === selectedTaskId) ?? null,
+    [tasks, selectedTaskId],
   );
 
   const { issueNumbers, groups } = useBacklogFilters({
@@ -68,7 +90,9 @@ export default function BacklogScreen() {
       setCommentCounts({});
       return;
     }
+
     let cancelled = false;
+
     Promise.all(
       tasks.map(
         async (task) =>
@@ -86,7 +110,82 @@ export default function BacklogScreen() {
     };
   }, [tasks]);
 
-  const selectedBoard = boards.find((b) => b._id === selectedBoardId) ?? null;
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setComments([]);
+      return;
+    }
+
+    setCommentsLoading(true);
+
+    getTaskComments(selectedTaskId)
+      .then(setComments)
+      .catch(() => setComments([]))
+      .finally(() => setCommentsLoading(false));
+  }, [selectedTaskId]);
+
+  const handlePatchSelectedTask = async (patch: Partial<TaskDoc>) => {
+    if (!selectedTaskId) {
+      return;
+    }
+
+    setSavingTask(true);
+    setError("");
+
+    const previousTasks = tasks;
+
+    setTasks((current) =>
+      current.map((task) =>
+        task._id === selectedTaskId ? { ...task, ...patch } : task,
+      ),
+    );
+
+    try {
+      const updated = await updateTask(selectedTaskId, patch);
+
+      setTasks((current) =>
+        current.map((task) =>
+          task._id === selectedTaskId ? { ...task, ...updated } : task,
+        ),
+      );
+    } catch (err: any) {
+      setTasks(previousTasks);
+      setError(getApiError(err, "Failed to save task"));
+    } finally {
+      setSavingTask(false);
+    }
+  };
+
+  const handleAddComment = async (commentText: string) => {
+    if (!selectedTaskId) {
+      return;
+    }
+
+    const created = await createTaskComment(selectedTaskId, commentText);
+
+    const commentWithFallbackUser: CommentDoc = {
+      ...created,
+      userId:
+        typeof created.userId === "object" && created.userId
+          ? created.userId
+          : user
+            ? {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+              }
+            : created.userId,
+      createdAt: created.createdAt ?? new Date().toISOString(),
+    };
+
+    setComments((current) => [...current, commentWithFallbackUser]);
+
+    setCommentCounts((current) => ({
+      ...current,
+      [selectedTaskId]: (current[selectedTaskId] ?? 0) + 1,
+    }));
+  };
 
   const handleCreatedIssue = (task: TaskDoc) => {
     setTasks((current) => uniqueById([task, ...current]));
@@ -218,6 +317,20 @@ export default function BacklogScreen() {
         teamMembers={teamMembers}
         onDismiss={() => setCreateOpen(false)}
         onCreated={handleCreatedIssue}
+      />
+
+      <TaskDetailsDialog
+        visible={Boolean(selectedTask)}
+        task={selectedTask}
+        issueKey={selectedTask ? issueNumbers[selectedTask._id] : ""}
+        sprints={sprints}
+        teamMembers={teamMembers}
+        comments={comments}
+        commentsLoading={commentsLoading}
+        saving={savingTask}
+        onDismiss={() => setSelectedTaskId(null)}
+        onPatch={handlePatchSelectedTask}
+        onAddComment={handleAddComment}
       />
     </View>
   );
