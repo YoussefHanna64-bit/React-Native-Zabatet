@@ -1,11 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
-import { Button, Text, TextInput } from "react-native-paper";
+import { Button, Menu, Text, TextInput } from "react-native-paper";
 import { useWorkspace } from "../context/WorkspaceContext";
-import type {
-  BoardDoc,
-  TaskDoc,
-} from "../features/backlog/types/backlog.types";
+import type { TaskStatus } from "../features/backlog/types/backlog.types";
 import {
   line,
   muted,
@@ -13,49 +10,46 @@ import {
   text as textColor,
 } from "../features/backlog/constants/backlog.constants";
 import BoardSelector from "../features/boards/components/BoardSelector";
-import {
-  getBoardsForWorkspace,
-  getTasksByBoard,
-} from "../features/backlog/api/backlog.api";
+import { useBacklogFilters } from "../features/backlog/hooks/useBacklogFilters";
+import { useBacklogData } from "../features/backlog/hooks/useBacklogData";
 
-const BacklogScreen = () => {
+const STATUS_FILTERS: Array<"All" | TaskStatus> = [
+  "All",
+  "Backlog",
+  "To Do",
+  "In Progress",
+  "Review",
+  "Done",
+];
+
+export default function BacklogScreen() {
   const { currentWorkspace } = useWorkspace();
 
-  const [boards, setBoards] = useState<BoardDoc[]>([]);
-  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<TaskDoc[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    workspace,
+    boards,
+    selectedBoardId,
+    sprints,
+    tasks,
+    setTasks,
+    loading,
+    loadingBoard,
+    error,
+    setError,
+    selectBoard,
+    handleBoardCreated,
+  } = useBacklogData(currentWorkspace?.name);
 
-  useEffect(() => {
-    if (!currentWorkspace) {
-      return;
-    }
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"All" | TaskStatus>("All");
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
-    setLoading(true);
-
-    getBoardsForWorkspace(currentWorkspace._id)
-      .then((fetched) => {
-        setBoards(fetched);
-
-        if (fetched.length > 0) {
-          setSelectedBoardId(fetched[0]._id);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [currentWorkspace]);
-
-  useEffect(() => {
-    if (!selectedBoardId) {
-      return;
-    }
-
-    getTasksByBoard(selectedBoardId)
-      .then(setTasks)
-      .catch(() => {});
-  }, [selectedBoardId]);
-
-  const handleCreateIssue = () => {};
+  const { groups } = useBacklogFilters({
+    tasks,
+    sprints,
+    search,
+    statusFilter,
+  });
 
   if (loading) {
     return (
@@ -70,33 +64,67 @@ const BacklogScreen = () => {
       <BoardSelector
         boards={boards}
         selectedId={selectedBoardId}
-        onSelect={setSelectedBoardId}
-        onBoardCreated={(board) => {
-          setBoards((prev) => [...prev, board]);
-          setSelectedBoardId(board._id);
-        }}
-        workspaceId={currentWorkspace?._id ?? null}
+        onSelect={selectBoard}
+        onBoardCreated={handleBoardCreated}
+        workspaceId={workspace?._id ?? null}
         loading={loading}
       />
 
-      <View style={styles.body}>
+      <View style={[styles.body, loadingBoard && styles.bodyLoading]}>
         <View style={styles.toolbar}>
           <TextInput
             mode="outlined"
+            value={search}
+            onChangeText={setSearch}
             placeholder="Search backlog..."
             dense
             left={<TextInput.Icon icon="magnify" />}
             style={styles.searchInput}
           />
+
+          <Menu
+            visible={filterMenuOpen}
+            onDismiss={() => setFilterMenuOpen(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                icon="filter-variant"
+                onPress={() => setFilterMenuOpen(true)}
+                compact
+              >
+                {statusFilter}
+              </Button>
+            }
+          >
+            {STATUS_FILTERS.map((status) => (
+              <Menu.Item
+                key={status}
+                title={status}
+                onPress={() => {
+                  setStatusFilter(status);
+                  setFilterMenuOpen(false);
+                }}
+              />
+            ))}
+          </Menu>
+
           <Button
             mode="contained"
             icon="plus"
-            onPress={handleCreateIssue}
+            onPress={() => {}}
+            disabled={!selectedBoardId}
             compact
+            style={{ marginLeft: "auto" }}
           >
             Create Issue
           </Button>
         </View>
+
+        {!!error && (
+          <View style={styles.errorBanner}>
+            <Text style={{ color: "#D32F2F" }}>{error}</Text>
+          </View>
+        )}
 
         <ScrollView style={{ flex: 1 }}>
           {!selectedBoardId ? (
@@ -110,24 +138,36 @@ const BacklogScreen = () => {
             <View style={styles.centerBlock}>
               <Text style={styles.blockTitle}>No backlog tasks yet</Text>
               <Text style={styles.blockSubtitle}>
-                Create your first issue to get started.
+                Use Create Issue to add your first task.
               </Text>
               <Button
                 mode="contained"
                 icon="plus"
-                onPress={handleCreateIssue}
+                onPress={() => {}}
                 style={{ marginTop: 12 }}
               >
                 Create Issue
               </Button>
             </View>
+          ) : groups.every((group) => group.tasks.length === 0) ? (
+            <View style={styles.centerBlock}>
+              <Text style={styles.blockTitle}>No tasks match this filter</Text>
+              <Text style={styles.blockSubtitle}>
+                Try another search word or status filter.
+              </Text>
+            </View>
           ) : (
-            tasks.map((task) => (
-              <View key={task._id} style={styles.taskRow}>
-                <Text style={styles.taskTitle}>{task.title}</Text>
-                {task.priority && (
-                  <Text style={styles.taskPriority}>{task.priority}</Text>
-                )}
+            groups.map((group) => (
+              <View key={group.id}>
+                <Text style={styles.sprintTitle}>{group.title}</Text>
+                {group.tasks.map((task) => (
+                  <View key={task._id} style={styles.taskRow}>
+                    <Text style={styles.taskTitle}>{task.title}</Text>
+                    {task.priority && (
+                      <Text style={styles.taskPriority}>{task.priority}</Text>
+                    )}
+                  </View>
+                ))}
               </View>
             ))
           )}
@@ -135,9 +175,7 @@ const BacklogScreen = () => {
       </View>
     </View>
   );
-};
-
-export default BacklogScreen;
+}
 
 const styles = StyleSheet.create({
   screen: {
@@ -153,6 +191,9 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
   },
+  bodyLoading: {
+    opacity: 0.5,
+  },
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
@@ -165,6 +206,12 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     height: 40,
+  },
+  errorBanner: {
+    margin: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#FFEBEE",
   },
   centerBlock: {
     paddingVertical: 60,
@@ -179,6 +226,16 @@ const styles = StyleSheet.create({
   blockSubtitle: {
     color: muted,
     textAlign: "center",
+  },
+  sprintTitle: {
+    color: muted,
+    fontWeight: "600",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 8,
   },
   taskRow: {
     flexDirection: "row",
