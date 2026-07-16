@@ -26,3 +26,35 @@ export function getAssigneeName(task: TaskDoc) {
   if (!task.assignee) return "Unassigned";
   return typeof task.assignee === "string" ? "Assigned" : task.assignee.name;
 }
+
+export function initials(name: string) {
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+export function avatarColor(name: string) {
+  const palette = [
+    "#8B5CF6",
+    "#6366F1",
+    "#F97316",
+    "#0EA5E9",
+    "#14B8A6",
+    "#EC4899",
+  ];
+  let total = 0;
+  for (let i = 0; i < name.length; i += 1) total += name.charCodeAt(i);
+  return palette[total % palette.length];
+}
+
+export function formatShortDate(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+}

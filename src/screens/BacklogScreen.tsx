@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Menu, Text, TextInput } from "react-native-paper";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -9,7 +9,11 @@ import {
   purple,
   text as textColor,
 } from "../features/backlog/constants/backlog.constants";
+import SprintSection from "../features/backlog/components/SprintSection";
 import BoardSelector from "../features/boards/components/BoardSelector";
+
+import { getTaskComments } from "../features/backlog/api/backlog.api";
+
 import { useBacklogFilters } from "../features/backlog/hooks/useBacklogFilters";
 import { useBacklogData } from "../features/backlog/hooks/useBacklogData";
 
@@ -31,11 +35,9 @@ export default function BacklogScreen() {
     selectedBoardId,
     sprints,
     tasks,
-    setTasks,
     loading,
     loadingBoard,
     error,
-    setError,
     selectBoard,
     handleBoardCreated,
   } = useBacklogData(currentWorkspace?.name);
@@ -43,13 +45,40 @@ export default function BacklogScreen() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | TaskStatus>("All");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>(
+    {},
+  );
 
-  const { groups } = useBacklogFilters({
+  const { issueNumbers, groups } = useBacklogFilters({
     tasks,
     sprints,
     search,
     statusFilter,
   });
+
+  useEffect(() => {
+    if (tasks.length === 0) {
+      setCommentCounts({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      tasks.map(
+        async (task) =>
+          [task._id, (await getTaskComments(task._id)).length] as const,
+      ),
+    )
+      .then((entries) => {
+        if (!cancelled) setCommentCounts(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        if (!cancelled) setCommentCounts({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tasks]);
 
   if (loading) {
     return (
@@ -158,17 +187,13 @@ export default function BacklogScreen() {
             </View>
           ) : (
             groups.map((group) => (
-              <View key={group.id}>
-                <Text style={styles.sprintTitle}>{group.title}</Text>
-                {group.tasks.map((task) => (
-                  <View key={task._id} style={styles.taskRow}>
-                    <Text style={styles.taskTitle}>{task.title}</Text>
-                    {task.priority && (
-                      <Text style={styles.taskPriority}>{task.priority}</Text>
-                    )}
-                  </View>
-                ))}
-              </View>
+              <SprintSection
+                key={group.id}
+                group={group}
+                issueNumbers={issueNumbers}
+                commentCounts={commentCounts}
+                onOpenTask={(task) => setSelectedTaskId(task._id)}
+              />
             ))
           )}
         </ScrollView>
@@ -226,35 +251,5 @@ const styles = StyleSheet.create({
   blockSubtitle: {
     color: muted,
     textAlign: "center",
-  },
-  sprintTitle: {
-    color: muted,
-    fontWeight: "600",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 8,
-  },
-  taskRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-  },
-  taskTitle: {
-    color: textColor,
-    fontWeight: "600",
-    fontSize: 14,
-    flex: 1,
-  },
-  taskPriority: {
-    color: muted,
-    fontSize: 11,
-    fontWeight: "500",
-    marginLeft: 8,
   },
 });
